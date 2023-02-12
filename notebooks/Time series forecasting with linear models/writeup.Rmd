@@ -1,0 +1,128 @@
+---
+title: "Improved forecasting methods using time series models"
+author: "Baines"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+bibliography: refs.bib
+output:
+   bookdown::pdf_document2:
+     toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse) 
+library(tidyquant)
+library(tsfe)
+library(fpp2)
+library(bookdown) ## this needs to be installed to knit this document to a pdf for submission
+```
+
+
+## Introduction and critique
+For decades, large traders, non-specialists, and academicians have been interested in the potential of forecasting stock market gains. The fact that the search is still on demonstrates how difficult it is to forecast returns [@Cochrane.2011]. This problem is compounded by the fact that the parameter being forecasted, Stock return- is a moving object that shifts with time. As such, models created to forecast stock prediction will often not be effective as the pattern modeled by the data has changed while the modeling was taking place [@Timmermann.2008]. Relationships between different market forces determine stock prices, and emotional contributions are also involved. 
+
+@Timmermann.2008 investigated the elusive nature of predicting the returns on stock investment and provided evidence of a relatively short period from which stable returns can be predicted with a certain level of confidence. The research considered a total of eleven forecasting models consisting of a model with a prevailing mean, a model which utilizes an auto-regressive specification, a model with factor augmentation which contains the addition of some common factors, two models with smoothening parameters, a logistic model, a neural net model and two models that were built on the previous models. The holt smoothing approach performs worst of the models in terms of the mean squared error.
+
+A type of evolutionary algorithm called Genetic Network Programming with a reinforcement learning system was applied by @Ramezanian.2019  to forecast stock return in the Tehran Stock Exchange Market. The Genetic Network Programming model was used in addition to Multilayer Perceptron neural network to model the time series. The Genetic Network Programming model extracts some patterns from the data, and the Multilayer Perceptron classifies the data and indicates the difference or similarity between the past and future data. This system reduces the forecasting error by about 16%. 
+
+@Lee.2019 took a different approach to predict stock return n the Taiwanese Stock Market. The author investigated the investor sentiment effect on the stock returns. The author explored predictable indicators and measured them using two approaches. One approach is the investor behavior indicator measured using the properties of return state and investor sentiment indicator measured with indices assigned to various investor states. The stock return was predicted with a neural network and compared with the actual returns. The study showed that investor behavior and sentiment indicator are useful in predicting the returns in a stock market, further entrenching the emotional involvement in the price movement in the financial market. 
+
+@Dai.Zhou.2020 proposed a method of estimating stock returns using the Sum-of-the-Parts Method and Three Economic Constraint Methods. The economic constraints method is used to predict the price-earnings ratio growth rate. The statistical analysis of the predictions showed that the forecasts were economically and statistically significant.
+Even though the models used in Timmermann(2008)  showed promise of predicting the returns in some small range of time, the models could not capture the long-lasting bull market in the second half of the 1990s. The project examines how simple forecasting techniques are improved using time series models. Different statistical models will be used to model stock return data, and their performances will be compared with a benchmark.  
+
+## Data and methods
+### Data
+The data used in this project contains market price indices for all shares of  FTSE from 1st of May 1962 to 1st of January 2019. 
+The data was split into training and test data. The training data contains historical data from 1962 to 2014 (Figure 1). The test data contains daily returns from the year 1st of January 2015 to 1st of January 2019.
+
+The data was split into training and test data. The training data contains historical data from 2017 to 2021 (Figure 1). The test data contains daily returns from the year 2022. 
+
+![Plot of data over the year 2017 to 2021](data-plot.png)
+
+### Models
+
+The Augmented Dickey-Fuller Test (ADF Test) was used to investigate the stationarity of the data. In contrast, the difference function was used to calculate the differencing level needed to make the data stationary.
+Partial auto-correlation function, Auto-correlation function, and Box-Ljung test are used to diagnose the model
+The models used in this project are Autoregressive Integrated Moving Average (ARIMA), Ordinary linear model, and Robust linear model. 
+The ARIMA (p,d,q) model consists of two parts (AR(p) and MA(q)) and a differencing parameter 'd'. 
+ 
+The equation of prediction of the ARIMA model is presented in equation 1
+
+$$
+y_t = \phi_1y_{t-1} + \phi_2y_{t-2} ... + \phi_py_{t-p} +  \epsilon_t ... (equation 1) 
+$$
+The ARIMA model is suitable for univariate data, and it involves the linear combination of observations with changes that occurs in the previous steps. Hence the errors are cumulative and distributive. The differing parameter is an improvement as it allows for differencing the nonstationary data, which converts them to stationary data that the ARIMA model can model sufficiently. 
+
+The ordinary linear model, a simple linear regression model, was used to model the data and produce a forecast. The equation for the prediction is presented below in equation 2
+$$
+ y = c + m_1x_1(equation 2)
+$$
+The robust linear model was also used in this research. Unlike the ordinary linear models that use least square regression to reduce residuals, the robust linear models use M-estimators to minimize the residual. Hence, robust linear models can handle outliers [@Venables.Ripley.2013]. 
+
+### Evaluation of performance
+Root mean square and Mean absolute error are used as the metric in this project to evaluate the model's performance. 
+
+The models are benchmarked and compared with the Seasonal Naïve forecast methods, which set the forecast to the last observation of the same season of each year.
+
+
+
+
+## Results
+The results of the analysis are presented in this section. Figure 2 shows the decomposed training data into its time series components. It can be observed that the data has seasonality and trend support that can be modeled. The result of the ADF test shows that the model is non-stationary (p-value= 0.2687). The difference level (1) obtained from the differencing function was used to make the data stationary.
+
+
+
+\pagebreak
+
+![Decomposition of the training data](seasonplot.png)
+
+The model performance in Table 1 shows that the robust linear model had the best forecast in the analysis. All the models performed better than the Naïve model. 
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+my_tbl <- tibble::tribble(
+                  ~Model,      ~RMSE,      ~MAE,
+       "Seasonal  Naïve", 3802.1813,	3788.88612,
+                 "ARIMA",   246.1491, 213.63393,
+         "Linear  model",    504.028,  453.5053,
+  "Robust  Linear model",   526.7438,  478.4827
+  )
+
+require(knitr)
+kable(my_tbl, digits = 3, row.names = FALSE, align = "c",
+              caption = "Table1: Table showing model performance")
+
+
+
+```
+The ACF plot of the model residual is shown in figure 3. Figure 4 shows the Ljung Box Q test. The plot shows that the p-values are mostly above 0.5. Figures 3 and 4 show that the ARIMA model can be used for forecasting. 
+
+![Figure 3: ACF plot of the ARIMA model residual](ACF.png)
+
+![Figure 4: : Ljung Box Q plot for the ARIMA model residual](Q-box.png)
+The seasonal naïve model performed worst. This could result from poor seasonal information in the data as the model relies on it for its prediction. The ordinary linear model performed worse than the ARIMA but higher than the Seasonal Naïve model. This is expected as the linear model merely fits a line through the one feature supplied. 
+
+The linear models assume homogeneity in the dataset. This can not always be assumed, as it has been established that emotion and sentiments play a role in stock price (Lee, 2019). The robust linear model also has a similar performance to the ordinary linear model, which shows that, in this case, there is little to no outlier data. Figure 5 shows the forecast by the ARIMA model. The ARIMA model showed prospects for improving the forecast of stock returns. 
+
+
+
+![Figure 5: Forecast plot showing the predictions of the ARIMA model ](forecast.png)
+
+
+
+## Discussion
+The research aims to determine if simple forecasting techniques can be improved using time series models. The results showed that the ARIMA model with p=2,d=1, and q=2 could model the data and produce a reasonable forecast. It can be used to model the stock data and have a very close forecast to the actual data, i.e., low error. 
+
+This study only considered linear models, and as such, it is limited in the amount of information and pattern that can be extracted from the data. Since non-linear components exist in the stock data, it will be beneficial to consider non-linear models and historical data from a more extended period. 
+
+
+\pagebreak
+
+
+
+
+
+
+
+## Reference

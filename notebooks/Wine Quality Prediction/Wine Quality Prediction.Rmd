@@ -1,0 +1,501 @@
+---
+title: "Wine Quality Prediction"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+
+# Data Set Selection
+
+This datasets is related to red variants of the Portuguese "Vinho Verde" wine.  Due to privacy and logistic issues, only physicochemical (inputs) and sensory (the output) variables are available (e.g. there is no data about grape types, wine brand, wine selling price, etc.).  
+
+The classes are ordered and not balanced (e.g. there are much more normal wines than excellent or poor ones).
+
+This dataset is also available from the UCI machine learning repository, https://archive.ics.uci.edu/ml/datasets/wine+quality
+
+**Content of the dataset**
+
+Input variables (based on physicochemical tests):  
+1 - fixed acidity  
+2 - volatile acidity  
+3 - citric acid  
+4 - residual sugar  
+5 - chlorides  
+6 - free sulfur dioxide  
+7 - total sulfur dioxide  
+8 - density  
+9 - pH  
+10 - sulphates  
+11 - alcohol  
+Output variable (based on sensory data):  
+12 - quality (score between 0 and 10)  
+
+A new quality target will be genrated from the quality feature
+
+
+Cortez, P., Cerdeira, A., Almeida, F., Matos, T., Reis, J., 2009. Modeling wine preferences by data mining from physicochemical properties. Decision Support Systems, 47, 547-553.
+
+Importing the required library
+
+
+```{r}
+library(caret)
+library(ggplot2)
+library(plyr)
+library(reshape2)
+library(ROSE)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(xgboost)
+```
+
+#Exploratory data analysis
+
+
+
+```{r}
+#Load data
+na_value<-list('',' ','nan','Nan','NaN','na') # missing values
+data<-read.csv(".\\winequality-red.csv", header = TRUE,na=na_value)
+
+```
+
+
+```{r}
+head(data)
+```
+
+
+```{r}
+# stastical summary of the data
+summary(data)
+```
+
+
+```{r}
+# Types and properties of features
+str(data,stringsAsFactors = FALSE)
+```
+
+
+```{r}
+#Checking for missing data
+is.null(data)
+```
+
+
+```{r}
+#gettting the distribution of values in the quality column
+count_quality<-count(data, 'quality')
+count_quality$quality<-as.factor(count_quality$quality)
+```
+
+
+```{r}
+#plotting the distribution of data in each unique value in the quality column
+p<-ggplot(data=count_quality, aes(x=quality, y=freq)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  theme_minimal()
+p
+```
+
+There is an imabalance in the distribution of the values in the quality column. As shown by the plot above, 5 and 6 are very common while the rest are quite few
+
+
+```{r}
+# plotting the distribution of data in all numeric features
+d <- melt(data)
+ggplot(d,aes(x = value)) + 
+    facet_wrap(~variable,scales = "free_x") + 
+    geom_histogram()
+```
+
+The plot above shows the distribution of data in each feature in the dataset. The plot shows fixed quality contains discrete values that can be used as a categorical variable while the rest have continuous values. The quality features can be used as a target for a <b>classification task</b>. However, more processing will be needed due to its imbalanced nature.  
+
+***
+
+# Data preparation
+From the previous section, it was noted that there are no missing values in the dataset. Since the total amount of data we have is very low, we will divide our wines as good, or bad. All wines with quality 7 or above are good, the rest are bad. The old quality column is subsequently removed
+The data contains an imbalanced distribution of the target variable. This will be treated using Resampling techniques.  
+
+##Resampling technique
+The following resampling techniques are used to overcome the imbalanced distribution in the dataset  
+ * Oversampling
+ * Balanced Sampling
+ * Generating synthetic data with Rose
+
+
+
+```{r}
+#creating a new target based on the quality column
+data$Quality=0
+data[data['quality']>6,'Quality']=1
+data$Quality <- as.factor(data$Quality)
+```
+
+
+```{r}
+count_quality<-count(data, 'Quality')
+p<-ggplot(data=count_quality, aes(x=Quality, y=freq)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  theme_minimal()
+p
+```
+
+The distribution of the data in the new target is also imabalanced. Resampling techniques will be used to overcome this challenge
+
+
+```{r}
+zero<- data[data['Quality']==0,] # the data with target '0'
+ones<- data[data['Quality']==1,] # the data with target '1'
+```
+
+
+```{r}
+drops <- c('quality') # removing old target
+data<-data[ , !(names(data) %in% drops)]
+```
+
+
+```{r}
+#Over sampling
+data_balanced_over <- ovun.sample(Quality ~ ., data = data, method = "over",N = 2*nrow(zero))$data
+```
+
+
+```{r}
+#Balanced sampling
+data_balanced_both <- ovun.sample(Quality ~ ., data = data, method = "both", p=0.5)$data 
+```
+
+
+```{r}
+# Synthetic data from rose
+data.rose <- ROSE(Quality ~ ., data, seed = 1)$data
+table(data.rose$Quality)
+```
+
+
+```{r}
+table(data_balanced_over$Quality)
+```
+
+
+```{r}
+table(data_balanced_both$Quality)
+```
+
+
+```{r}
+group <- NA
+group[data_balanced_over$Quality == 0] <- 1
+group[data_balanced_over$Quality == 1] <- 2
+pairs(
+    data_balanced_over,
+    col = c("red", "cornflowerblue")[group],
+    pch = c(4, 9,1)[group],
+    main = "Pair plots of variables in over sampled data"
+)
+```
+
+
+```{r}
+
+group <- NA
+group[data_balanced_both$Quality == 0] <- 1
+group[data_balanced_both$Quality == 1] <- 2
+pairs(
+    data_balanced_both,
+    col = c("red", "cornflowerblue")[group],
+    pch = c(4, 9,1)[group],
+    main = "Pair plots of variables in balanced data"
+)
+```
+
+The pairplots shows correlation between some features, However in this task, we will be considering algorithms that have can the select the best fetaures for modeling - a natural optimum feature selection
+
+Generating training and test data
+
+
+```{r}
+# 80:20 split
+set.seed(101)
+
+train_over=sample(1:nrow(data_balanced_over), 2211)
+train_both=sample(1:nrow(data_balanced_both), 1279)
+train_rose=sample(1:nrow(data_balanced_over), 1279)
+```
+***
+
+# Supervised Learning experiment  
+
+The algorithm that will be considered for this task are Decision tree, Random Forest, and XGBoost is used to model the data.
+
+Due to the nature of the data and the preprocessing technique used, a combination of metrics that can penalize wrong predictions such as Precision, Recall, and ROC score is used to evaluate the performance of the models. Accuracy is used as the final metric.
+The datsets with the highest accuracy in modelling with decision tree will be used in the other algorithm  
+
+
+## Implementing Decison tree algorithm
+
+
+```{r}
+#build decision tree models
+tree.rose <- rpart(Quality ~ ., data = data.rose[train_rose,])
+tree.over <- rpart(Quality ~ ., data = data_balanced_over[train_over,])
+
+tree.both <- rpart(Quality ~ ., data = data_balanced_both[train_both,])
+```
+
+
+```{r}
+#make predictions on unseen data
+pred.tree.rose <- predict(tree.rose, newdata = data.rose[-train_rose,])
+pred.tree.over <- predict(tree.over, newdata =data_balanced_over[-train_over,])
+
+pred.tree.both <- predict(tree.both, newdata = data_balanced_both[-train_both,])
+```
+
+
+```{r}
+#AUC ROSE
+roc.curve(data.rose[-train_rose,]$Quality, pred.tree.rose[,2])
+
+
+#AUC Oversampling
+roc.curve(data_balanced_over[-train_over,]$Quality, pred.tree.over[,2])
+
+
+#AUC Both
+roc.curve(data_balanced_both[-train_both,]$Quality, pred.tree.both[,2])
+
+```
+
+**Tuning the hyper parameter of the decision trees**
+
+
+```{r}
+# Create train/test data for the over balanced data
+data_train <- data_balanced_over[train_over,]
+data_test <- data_balanced_over[-train_over,]
+```
+
+
+```{r}
+fit <- rpart(Quality~., data = data_train, method = 'class')
+rpart.plot(fit, extra = 106)
+```
+
+The plots shows how the ddecision tree arrived a prediction, it is evident that fixed.acidity and sulphates content are used as the parent for subdivision
+
+
+```{r}
+# preidciting with decision tree model
+predict_unseen <-predict(fit, data_test, type = 'class')
+```
+
+
+```{r}
+#generating classification report
+table_mat <- table(data_test$Quality, predict_unseen)
+table_mat
+```
+
+The model correctly predicted some entries belonging to class '0' but misclassified some entries as '1'. 
+
+```{r}
+accuracy_Test <- sum(diag(table_mat)) / sum(table_mat)
+print(paste('Accuracy for test', accuracy_Test))
+```
+
+
+```{r}
+# Function to return accuracy
+accuracy_tune <- function(fit) {
+    predict_unseen <-predict(fit, data_test, type = 'class')
+    table_mat <- table(data_test$Quality, predict_unseen)
+    accuracy_Test <- sum(diag(table_mat)) / sum(table_mat)
+    accuracy_Test
+}
+```
+
+
+```{r}
+# further tuning the decision
+control <- rpart.control(xval=5,minsplit = 0.001,
+    minbucket = 0.1,
+    maxdepth = 10,
+    cp = 0)
+tune_fit <- rpart(Quality~., data = data_train, method = 'class', control = control)
+print(paste('Decision tree accuracy for test ', accuracy_tune(tune_fit)))
+
+```
+
+# Implementing Random Forest 
+
+
+```{r}
+rf <- train(
+  Quality ~ .,
+  data=data_train,
+    method='rf',
+    trControl = trainControl(method = 'cv', # Use cross-validation
+                             number = 10)
+    )
+```
+
+
+```{r}
+rf
+```
+
+
+```{r}
+pred<-predict(rf, newdata = data_test)
+table_mat <- table(data_test$Quality, pred)
+accuracy_test <- sum(diag(table_mat)) / sum(table_mat)
+print(paste('Random Forest accuracy for test ', accuracy_test))
+```
+
+
+```{r}
+fm <- rf$finalModel
+
+```
+
+
+```{r}
+imp<- data.frame(
+Columns=c('fixed.acidity', 'volatile.acidity', 'citric.acid',
+       'residual.sugar', 'chlorides', 'free.sulfur.dioxide',
+       'total.sulfur.dioxide', 'density', 'pH', 'sulphates', 'alcohol'),
+Importance=varImp(fm)$Overall)
+ggplot(imp, aes(x=Columns, y=Importance,fill=as.factor(Columns))) + 
+  geom_bar(stat = "identity")+
+theme(legend.position="none")+
+coord_flip()
+```
+
+Alcohol is the most important feature in modeling the data from the perspective of the model
+
+## Implementing XGBoost
+
+
+```{r}
+train_x = data.matrix(data_train[,-12])
+train_y = data_train[,12]
+ 
+test_x = data.matrix(data_test[,-12])
+test_y = data_test[,12]
+
+```
+
+
+```{r}
+#convert the train and test data into xgb matrix type.
+
+xgb_train = xgb.DMatrix(data=train_x, label=train_y)
+xgb_test = xgb.DMatrix(data=test_x, label=test_y)
+
+```
+
+
+```{r}
+# training the XGBoost model
+xgbc = xgboost(data=xgb_train, max.depth=50, nrounds=50)
+```
+
+
+```{r}
+pred = predict(xgbc, xgb_test)
+#convert the result into factor type.
+
+pred[(pred>2)] = 2
+pred_y = as.factor((levels(test_y))[round(pred)])
+prcm = confusionMatrix(test_y, pred_y)
+prcm
+```
+
+
+```{r}
+
+table_mat <- table(data_test$Quality,pred_y)
+accuracy_test <- sum(diag(table_mat)) / sum(table_mat)
+accuracy_test
+```
+
+**Tuning the hyperparameters of XGBoost**
+
+
+```{r}
+train_x = data.matrix(data_train[,-12])
+train_y = as.numeric(as.character(data_train[,12]))
+ 
+test_x = data.matrix(data_test[,-12])
+test_y = as.numeric(as.character(data_test[,12]))
+
+#convert the train and test data into xgb matrix type.
+
+xgb_train = xgb.DMatrix(data=train_x, label=train_y)
+xgb_test = xgb.DMatrix(data=test_x, label=test_y)
+```
+
+
+```{r}
+params <- list(
+  eta = 0.1,
+  max_depth = 100,
+  min_child_weight = 1,
+  subsample = 0.8,
+  colsample_bytree = 0.8
+)
+
+# train final model
+xgb.fit.final <- xgboost(
+  params = params,
+    data=xgb_train,
+  nrounds = 1000,
+  objective = "binary:logistic",
+  verbose = 0,
+    nfold=5
+    )
+```
+
+
+```{r}
+pred = predict(xgb.fit.final, xgb_test)
+pred[(pred>2)] = 2
+pred_y = as.factor(round(pred))
+table_mat <- table(data_test$Quality,pred_y)
+accuracy_test <- sum(diag(table_mat)) / sum(table_mat)
+accuracy_test
+```
+
+
+```{r}
+#plotting feature importance 
+importance_matrix <- xgb.importance(model = xgb.fit.final)
+
+# variable importance plot
+xgb.plot.importance(importance_matrix, top_n = 10, measure = "Gain")
+```
+
+Alcohol is the most important feaure used in modeling this data  
+
+
+***
+
+
+# Evaluation
+
+The modeling of the data by the decision tree algorithm showed the data can be separated into groups using the fixed acidity and sulphates content. This can give an initial conclusion that these two features are the most important features when deciding the quality of wine samples. However, further modeling with random forest and XGboost shows that alcohol and sulpates contents are very useful in classifying the wine.  
+
+The data produced by the oversmapling technique yield the favorable performance representation of the data.
+The models perform very well after fine-tuning the hyperparameters. Random forest was able to outperform the other models. Oversampling of the dataset worked efficiently for the task because it creates enough data for the model to generalize better and make a more accurate prediction.   
+Based on the feature importance plot of Random forest and Xgboost, the top 5 important features are 'alcohol', 'sulphates', 'volatile.acidity', 'total.sulfur.dioxide' and 'fixed.acidity'  
+
+
+```{r}
+
+```
