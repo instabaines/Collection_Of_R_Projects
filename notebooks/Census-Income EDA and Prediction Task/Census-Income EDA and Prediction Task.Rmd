@@ -1,0 +1,432 @@
+# Classification of Adult based on Income 
+
+
+
+## Introduction
+Columns included in the dataset:
+* Age : continuous.
+* Workclass: Private, Self-emp-not-inc, Self-emp-inc, Federal-gov, Local-gov, State-gov, Without-pay, Never-worked.
+* fnlwgt: continuous.
+* Education : Bachelors, Some-college, 11th, HS-grad, Prof-school, Assoc-acdm, Assoc-voc, 9th, 7th-8th, 12th, Masters, 1st-4th,                           10th, Doctorate, 5th-6th.
+* Education Number : continuous.
+* Martial Status: Married-civ-spouse, Divorced, Never-married, Separated, Widowed, Married-spouse-absent, Married-AF-spouse.
+* Occupation: Tech-support, Craft-repair, Other-service, Sales, Exec-managerial, Prof-specialty, Handlers-cleaners, Machine-op-inspct, Adm-               clerical, Farming-fishing, Transport-moving, Priv-house-serv, Protective-serv, Armed-Forces.
+* Relationship : Wife, Own-child, Husband, Not-in-family, Other-relative, Unmarried.
+* Race : White, Asian-Pac-Islander, Amer-Indian-Eskimo,Black, other.
+* Sex: Female, Male.
+* Capital Gain : Continuous.
+* Capital Loss : Continuous.
+* Hours per week : Working hours per week(continuous)
+* Native Country : United-States, Cambodia, England, Puerto-Rico, Canada, Germany, Outlying-US(Guam-USVI-etc), India, Japan, Greece, South,                    China, Cuba, Iran, Honduras, Philippines, Italy, Poland, Jamaica, Vietnam, Mexico, Portugal, Ireland, France, Dominican-                    Republic, Laos, Ecuador, Taiwan, Haiti, Columbia, Hungary, Guatemala, Nicaragua, Scotland, Thailand, Yugoslavia, El-                        Salvador, Trinadad&Tobago, Peru, Hong, Holand-Netherlands.
+
+
+## Content
+1. Get Data
+2. Data Cleaning
+3. Missing values
+4. Building model
+5. Classification Models
+   * Logistic Regression
+   * SVM (Support Vector Machine)
+
+# Problem Statement
+Predicting the class of people based on their income of different countries.
+
+# Importing Library
+
+
+```{r}
+library(Amelia)
+library(dplyr)
+library(ggplot2)
+library(ISLR)
+library(e1071)
+library(caTools)
+```
+
+## Loading the data
+
+
+
+```{r}
+adult <- read.csv("adult.csv")
+```
+
+
+```{r}
+# Checking the head of the adult.
+head(adult)
+```
+
+
+```{r}
+# Checking the structure of the data.
+str(adult)
+```
+
+
+```{r}
+# Checking the Summary of the data.
+summary(adult)
+```
+
+## Data Cleaning
+We can notice that a lot of columns with cateogrical factors are there, however many of these columns have too many factors than required. In this data cleaning section we'll try to reduce the number of factors by cleaning the columns.
+
+### Work Class column
+Using table() for checking the frequency of the workclass column.
+
+
+```{r}
+table(adult$workclass)
+```
+
+
+
+Combining these two smallest groups into a single group called as "Unemployed". 
+
+
+```{r}
+unemp <- function(job_role){
+    job_role <- as.character(job_role)
+    if (job_role=="Never-worked" | job_role=="Without-pay"){
+        return("Unemployed")
+    }else{
+        return(job_role)
+    }
+}
+adult$workclass <- sapply(adult$workclass,unemp)
+table(adult$workclass)
+```
+
+State and Local gov jobs  are also combined to a single class called "SL-gov" 
+Self-employed jobs are renamed to "self-emp" 
+
+
+
+```{r}
+grp_emp <- function(job_role){
+    if (job_role=="Local-gov" | job_role=="State-gov"){
+        return("SL-gov")
+    }else if (job_role=="Self-emp-inc" | job_role=="Self-emp-not-inc"){
+        return("self-emp")
+    }else{
+        return(job_role)
+    }
+}
+adult$workclass <- sapply(adult$workclass,grp_emp)
+table(adult$workclass)
+```
+
+# Marital Status Column
+
+
+
+```{r}
+table(adult$marital.status)
+```
+
+We can reduce three groups from this column as:
+Married
+Not-Married
+Never-Married
+
+
+```{r}
+grp_marital_sts <- function(mart_sts){
+    mart_sts <- as.character(mart_sts)
+    
+    # Not-Married
+    if (mart_sts=="Separated" | mart_sts=="Divorced" | mart_sts=="Widowed"){
+        return("Not-Married")
+    
+    # Never-Married   
+    }else if(mart_sts=="Never-married"){
+        return(mart_sts)
+    
+     #Married
+    }else{
+        return("Married")
+    }
+}
+adult$marital.status <- sapply(adult$marital.status,grp_marital_sts)
+table(adult$marital.status)
+```
+
+# Country Column
+
+
+
+```{r}
+table(adult$native.country)
+```
+
+We will group these countries together into continents. The number of the groups will be reduces significantly.
+
+
+```{r}
+levels(adult$native.country)
+```
+
+
+```{r}
+Asia <- c("China","Hong","India","Iran","Cambodia","Japan", "Laos","Philippines" ,"Vietnam" ,"Taiwan", "Thailand")
+
+N.A <- c("Canada","United-States","Puerto-Rico")
+
+Europe <- c("England","France","Germany" ,"Greece","Holand-Netherlands","Hungary","Ireland","Italy","Poland","Portugal","Scotland"
+            ,"Yugoslavia")
+
+S.A <- c("Columbia","Cuba","Dominican-Republic","Ecuador","El-Salvador","Guatemala","Haiti","Honduras","Mexico","Nicaragua"
+                   ,"Outlying-US","Peru","Jamaica","Trinadad&Tobago")
+Remaining_count <- c("South")
+```
+
+
+```{r}
+grp_cntry <- function(cntry){
+    if (cntry %in% Asia){
+        return("Asia")
+    }else if (cntry %in% N.A){
+        return("N.A")
+    }else if (cntry %in% Europe){
+        return("Europe")
+    }else if (cntry %in% S.A){
+        return("S.A")
+    }else{
+        return("Remaining_count")      
+    }
+}
+adult$native.country <- sapply(adult$native.country,grp_cntry)
+```
+
+
+```{r}
+table(adult$native.country)
+```
+
+
+```{r}
+# Checking the sturture of the data frame for data type
+str(adult)
+```
+
+
+```{r}
+# Converting into factor datatype
+adult$workclass <- as.factor(adult$workclass)
+adult$native.country <- as.factor(adult$native.country)
+adult$marital.status <- as.factor(adult$marital.status)
+```
+
+
+```{r}
+# Confirming the conversion
+str(adult)
+```
+
+
+# Missing Data
+
+
+Converting any value with a '?' or a ' ?' value to a NA value. 
+
+
+```{r}
+adult[adult == "?"] <- NA
+```
+
+
+```{r}
+table(adult$workclass)
+```
+
+
+```{r}
+adult$workclass <- as.factor(adult$workclass)
+adult$native.country <- as.factor(adult$native.country)
+adult$marital.status <- as.factor(adult$marital.status)
+adult$occupation <- as.factor(adult$occupation)
+```
+
+Looking for the missing data using amelia package.
+
+
+```{r}
+missmap(adult)
+```
+
+
+```{r}
+adult <- na.omit(adult)
+missmap(adult)
+```
+
+# Minor EDA (Exploratory Data Analysis)
+
+
+
+```{r}
+# checking the structure of the data.
+str(adult)
+```
+
+
+```{r}
+# Creating a histogram of ages
+g<-ggplot(adult,aes(age)) + geom_histogram(aes(fill=income),color="white",binwidth=1) + theme_bw()
+
+ggsave(g, file="histogram of ages.png")
+g
+```
+
+
+```{r}
+# Ploting a histogram of hours worked per week
+g<-ggplot(adult,aes(hours.per.week)) + geom_histogram(aes(color="red"),bins = 30) + theme_bw()
+
+ggsave(g, file="histogram of hours worked per week.png")
+g
+```
+
+
+```{r}
+# Creating a barplot of country
+g<- ggplot(adult,aes(native.country)) + geom_bar(aes(fill=income))+theme_bw()
+
+ggsave(g, file="barplot of country.png")
+g
+```
+
+# Building a Model
+
+
+
+```{r}
+
+# checking before building a model 
+head(adult)
+set.seed(101) 
+```
+
+## Train Test Split
+
+
+```{r}
+# Split up the sample, basically randomly assigns a booleans to a new column "sample"
+sample <- sample.split(adult$income, SplitRatio = 0.70) 
+
+# Training Data
+train = subset(adult, sample == TRUE)
+
+# Testing Data
+test = subset(adult, sample == FALSE)
+```
+
+# Logistic Regression
+
+
+
+
+```{r}
+##Logistic model
+model = glm(income ~ ., family = binomial(logit), data = train)
+summary(model)
+```
+
+
+```{r}
+# Confusion Matrix and predictions
+test$predicted.income = predict(model, newdata=test, type="response")
+table(test$income, test$predicted.income > 0.5)
+```
+
+
+```{r}
+# accuracy 
+print("Accuracy")
+(6415+1388)/(505+1388+6415+907)
+#(615+1388)/(6372+1423+548+872)
+#specificity
+print("Specificity")
+(1388/(1388+907))
+
+##recall and sensitivity
+print("Recall and Sensitivity")
+6415/(6415+505)
+
+#precision
+print("Precision")
+6415/(6415+907)
+
+#miss-classification
+print("Miss-classification")
+(505+907)/(6415+1388+505+907)
+```
+
+# SVM
+
+
+
+```{r}
+
+# checking before building a model 
+head(adult)
+set.seed(101) 
+```
+
+# Train Test Split
+
+
+```{r}
+# Split up the sample, basically randomly assigns a booleans to a new column "sample"
+sample.adult <- sample.split(adult$income, SplitRatio = 0.70) # SplitRatio = percent of sample==TRUE
+
+# Training Data
+train.adult = subset(adult, sample.adult == TRUE)
+
+# Testing Data
+test.adult = subset(adult, sample.adult == FALSE)
+```
+
+
+```{r}
+# Applying SVM Model
+model.adult = svm(income ~ .,data = train.adult)
+summary(model.adult)
+```
+
+
+```{r}
+# Prediction of data and Confusion Matrix
+test.adult$pred.value = predict(model.adult, newdata=test.adult, type="response")
+table(test.adult$income, test.adult$pred.value)
+```
+
+
+```{r}
+# accuracy
+print("Accuracy")
+(6512+1308)/(6512+1308+408+987)
+
+##recall and sensitivity
+print("Recall and Sensitivity")
+6512/(6512+408)
+
+#specificity
+print("Specificity")
+1308/(1308+987)
+
+#precision
+print("Precision")
+6512/(6512+987)
+
+# miss-classification
+print("Miss-classification")
+(408+987)/(6512+1308+408+987)
+```
+
+
+```{r}
+
+```
